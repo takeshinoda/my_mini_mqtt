@@ -1,0 +1,3 @@
+[workspace]
+members = ["mini_mqtt", "mini_mqtt_broker"]
+resolver = "2"
