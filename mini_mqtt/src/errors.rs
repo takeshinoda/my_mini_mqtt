@@ -4,6 +4,7 @@ use std::{fmt, io};
 pub enum Error {
     Io(io::Error),
     ParserError(String),
+    ProtocolError(String),
     MalformedPacket(String),
     Common(String),
 }
@@ -14,6 +15,7 @@ impl fmt::Display for Error {
             Error::Io(err) => write!(f, "I/O error in the MQTT codec: {}", err),
             Error::ParserError(msg) => write!(f, "Invalid data for decoding: {}", msg),
             Error::MalformedPacket(msg) => write!(f, "Malformed packet: {}", msg),
+            Error::ProtocolError(msg) => write!(f, "Protocol Error packet: {}", msg),
             Error::Common(msg) => write!(f, "Error in the MQTT codec: {}", msg),
         }
     }

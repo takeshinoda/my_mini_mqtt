@@ -19,7 +19,7 @@ pub fn decode(reader: &mut dyn Read) -> Result<packets::Packet, Error> {
 
     match parse_fixed_header(&buffer).finish() {
         Ok((_, fixed_header)) => match fixed_header.control_packet_type {
-            Bits(CONNECT) => Ok(packets::Packet::Connect),
+            Bits(packets::CONNECT) => Ok(packets::Packet::Connect),
             _ => Ok(packets::Packet::Unknown),
         },
         Err(err) => Err(Error::from(err)),
@@ -162,6 +162,9 @@ where
     })
 }
 
+// parse_properties is a helper function to parse the properties from the input.
+// If there are duplicate properties, the last one will be used. But strictly speaking,
+// it should be an error as a Protocol Error of the reason code 0x97 of the MQTT 5.0 specs.
 fn parse_properties(input: &[u8]) -> IResult<&[u8], Properties> {
     let (input, properties_length) = parse_variable_byte_integer(input)?;
 
@@ -256,22 +259,3 @@ fn parse_property(input: &[u8]) -> IResult<&[u8], (VariableByteInteger, ValueTyp
     // Return the identifier and parsed value
     Ok((input, (identifier, value)))
 }
-
-//const RESERVED: u8 = 0;
-const CONNECT: u8 = 1;
-/*
-const CONNACK: u8 = 2;
-const PUBLISH: u8 = 3;
-const PUBACK: u8 = 4;
-const PUBREC: u8 = 5;
-const PUBREL: u8 = 6;
-const PUBCOMP: u8 = 7;
-const SUBSCRIBE: u8 = 8;
-const SUBACK: u8 = 9;
-const UNSUBSCRIBE: u8 = 10;
-const UNSUBACK: u8 = 11;
-const PINGREQ: u8 = 12;
-const PINGRESP: u8 = 13;
-const DISCONNECT: u8 = 14;
-const AUTH: u8 = 15;
- */

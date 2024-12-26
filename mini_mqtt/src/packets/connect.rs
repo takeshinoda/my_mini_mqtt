@@ -1,8 +1,9 @@
+use std::fmt;
 use super::{
     BinaryData, Bits, ExtractValue, FixedHeader, Properties, QoS, TwoByteInteger, UTF8EncodedString,
 };
 use crate::errors::Error;
-use std::fmt;
+use crate::packets;
 
 #[path = "connect_tests.rs"]
 #[cfg(test)]
@@ -132,4 +133,126 @@ impl Payload {
             password,
         })
     }
+}
+
+// validate the provided CONNECT Packet as the version 5.0.
+pub fn validate(connect: &Connect) -> Result<(), Vec<Error>> {
+    let mut errors = Vec::new();
+
+    let fixed_header = &connect.fixed_header;
+    if fixed_header.control_packet_type != Bits(packets::CONNECT) {
+        errors.push(Error::MalformedPacket(
+            format!("Control Packet Type is {:?}. It is not CONNECT{}",
+                fixed_header.control_packet_type, packets::CONNECT).to_string()
+        ));
+    }
+    // Ignore the flags of the Fixed Header for now...
+
+    let variable_header = &connect.variable_header;
+    if variable_header.protocol_name.val() != "MQTT" {
+        errors.push(Error::MalformedPacket(
+            format!("Protocol Name is not MQTT. It is {}", variable_header.protocol_name.val()).to_string()
+        ));
+    }
+
+    if variable_header.protocol_version.val() != 5 {
+        errors.push(Error::MalformedPacket(
+            format!("Protocol Version is not 5. It is {}", variable_header.protocol_version.val()).to_string()
+        ));
+    }
+
+    // Ignore around the Will Flags for now...
+
+    if variable_header.connect_flags.username() {
+        if connect.payload.user_name.is_none() {
+            errors.push(Error::MalformedPacket(
+                "User Name is not provided even the user name flag is 1.".to_string()
+            ));
+        }
+    } else {
+        if connect.payload.user_name.is_some() {
+            errors.push(Error::MalformedPacket(
+                "User Name is provided even the user name flag is 0.".to_string()
+            ));
+        }
+    }
+
+    if variable_header.connect_flags.password() {
+        if connect.payload.password.is_none() {
+            errors.push(Error::MalformedPacket(
+                "Password is not provided even the password flag is 1.".to_string()
+            ));
+        }
+    } else {
+        if connect.payload.password.is_some() {
+            errors.push(Error::MalformedPacket(
+                "Password is provided even the password flag is 0.".to_string()
+            ));
+        }
+    }
+
+    // Keep Alive is not necessary to validate.
+
+    // Ignore the following properties for now...
+    // - Receive Maximum
+    // - Maximum Packet Size
+    // - Topic Alias Maximum
+    // - Request Response Information
+    // - Request Problem Information
+    // - User Property
+    // - Authentication Method
+    // - Authentication Data
+
+    if let Err(err) = validate_client_id(&connect.payload.client_id.val()) {
+        errors.push(err);
+    }
+
+    // Ignore the Will Properties for now...
+
+    if variable_header.connect_flags.username() {
+        if connect.payload.user_name.is_none() {
+            errors.push(Error::MalformedPacket(
+                "User Name is not provided even the user name flag is 1.".to_string()
+            ));
+        }
+    }
+
+    if variable_header.connect_flags.password() {
+        if connect.payload.password.is_none() {
+            errors.push(Error::MalformedPacket(
+                "Password is not provided even the password flag is 1.".to_string()
+            ));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+// Validate the Client ID of the CONNECT Packet.
+// There is the following specification for the Client ID:
+//   A Server MAY allow a Client to supply a ClientID that has a length of zero bytes, however if it does so the
+//   Server MUST treat this as a special case and assign a unique ClientID to that Client [MQTT-3.1.3-6]
+// But, for now, we don't support the zero-length Client ID.
+// Look the 3.1.3.1 Client Identifier (ClientID) subsection for more details.
+fn validate_client_id(client_id: &str) -> Result<(), Error> {
+    let len = client_id.len();
+    if len < 1 || len > 23 {
+        return Err(Error::MalformedPacket(
+            format!("Client ID length is not between 1 and 23. It is {}", client_id.len()).to_string()
+        ));
+    }
+    // Allowed characters are: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    for c in client_id.chars() {
+        if !c.is_ascii_alphanumeric() {
+            return Err(Error::MalformedPacket(
+                format!("Client ID contains non-alphanumeric character: {}", c).to_string()
+            ));
+        }
+    }
+
+    Ok(())
 }

@@ -30,6 +30,26 @@ pub enum Packet {
     Auth,
 }
 
+// Control Packet Type of the Fixed Header.
+//pub const RESERVED: u8 = 0;
+pub const CONNECT: u8 = 1;
+/*
+pub const CONNACK: u8 = 2;
+pub const PUBLISH: u8 = 3;
+pub const PUBACK: u8 = 4;
+pub const PUBREC: u8 = 5;
+pub const PUBREL: u8 = 6;
+pub const PUBCOMP: u8 = 7;
+pub const SUBSCRIBE: u8 = 8;
+pub const SUBACK: u8 = 9;
+pub const UNSUBSCRIBE: u8 = 10;
+pub const UNSUBACK: u8 = 11;
+const PINGREQ: u8 = 12;
+const PINGRESP: u8 = 13;
+const DISCONNECT: u8 = 14;
+const AUTH: u8 = 15;
+ */
+
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct Bits(pub u8); // 1.5.1 Bits subsection
 #[derive(Debug, Eq, PartialEq, Clone)]
