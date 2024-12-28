@@ -1,5 +1,5 @@
 use super::*;
-use crate::packets::connect::{Connect, ConnectFlags, Payload};
+use crate::packets;
 use nom::IResult;
 
 #[path = "connect_tests.rs"]
@@ -7,15 +7,15 @@ use nom::IResult;
 mod connect_tests;
 
 pub fn connect_parser<'a>(
-    fixed_header: FixedHeader,
-) -> impl FnOnce(&'a [u8]) -> IResult<&'a [u8], Connect> {
+    fixed_header: packets::FixedHeader,
+) -> impl FnOnce(&'a [u8]) -> IResult<&'a [u8], packets::connect::Connect> {
     move |input| {
         let (input, variable_header) = parse_variable_header(input)?;
         let (input, payload) = {
             let connect_flags = &variable_header.connect_flags;
             payload_parser(connect_flags)(input)?
         };
-        let connect = Connect::new(fixed_header, variable_header, payload)?;
+        let connect = packets::connect::Connect::new(fixed_header, variable_header, payload)?;
         Ok((input, connect))
     }
 }
@@ -47,21 +47,21 @@ pub fn parse_variable_header(input: &[u8]) -> IResult<&[u8], packets::connect::V
     Ok((input, variable_header))
 }
 
-fn parse_connect_flags(input: &[u8]) -> IResult<&[u8], ConnectFlags> {
+fn parse_connect_flags(input: &[u8]) -> IResult<&[u8], packets::connect::ConnectFlags> {
     let (input, flags) = parse_bits(input)?;
 
-    let flags = ConnectFlags::new(flags)?;
+    let flags = packets::connect::ConnectFlags::new(flags)?;
     Ok((input, flags))
 }
 
-fn payload_parser<'a, 'b>(connect_flags: &'b ConnectFlags) -> impl FnOnce(&'a [u8]) -> IResult<&'a [u8], Payload> +'a {
+fn payload_parser<'a, 'b>(connect_flags: &'b packets::connect::ConnectFlags) -> impl FnOnce(&'a [u8]) -> IResult<&'a [u8], packets::connect::Payload> +'a {
     let connect_flags = connect_flags.clone();
     move |input|  {
         parse_payload(input, connect_flags)
     }
 }
 
-fn parse_payload(input: &[u8], connect_flags: ConnectFlags) -> IResult<&[u8], Payload> {
+fn parse_payload(input: &[u8], connect_flags: packets::connect::ConnectFlags) -> IResult<&[u8], packets::connect::Payload> {
     // 3.1.3 CONNECT Payload subsection
     // 3.1.3.1 Client Identifier (ClientID) subsection, TODO: validation
     let (input, client_id) = parse_utf8_encoded_string(input)?;
@@ -88,7 +88,7 @@ fn parse_payload(input: &[u8], connect_flags: ConnectFlags) -> IResult<&[u8], Pa
     // 3.1.3.6 Password subsection
     let (input, password) = option_parser(parse_binary_data, connect_flags.password())(input)?;
 
-    let payload = Payload::new(
+    let payload = packets::connect::Payload::new(
         client_id,
         will_properties,
         will_topic,

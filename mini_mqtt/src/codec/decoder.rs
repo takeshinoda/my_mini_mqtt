@@ -1,10 +1,10 @@
-use nom::{bytes, Err, Finish, IResult};
-use std::io;
 use std::io::Read; // to import the Read trait.
 
-use crate::errors::Error;
+use nom::{bytes, Finish, IResult};
+
+use crate::errors;
 use crate::packets;
-use crate::packets::{BinaryData, Bits, ExtractValue, FixedHeader, FourByteInteger, Properties, TwoByteInteger, UTF8EncodedString, UTF8StringPair, ValueTypes, VariableByteInteger};
+use crate::packets::{BinaryData, Bits, ExtractValue, FourByteInteger, TwoByteInteger, UTF8EncodedString, UTF8StringPair, ValueTypes, VariableByteInteger};
 
 pub mod connect;
 
@@ -12,25 +12,31 @@ pub mod connect;
 #[cfg(test)]
 mod decoder_tests;
 
-pub fn decode(reader: &mut dyn Read) -> Result<packets::Packet, Error> {
-    let mut buffered_reader = io::BufReader::new(reader);
-    let mut buffer = [0u8; 1024];
-    buffered_reader.read(&mut buffer)?;
+pub fn decode(reader: &mut dyn Read) -> Result<packets::Packet, errors::Error> {
+    let mut input = Vec::new();
+    reader.read_to_end(&mut input)?;
+   let input = input.as_slice();
 
-    match parse_fixed_header(&buffer).finish() {
-        Ok((_, fixed_header)) => match fixed_header.control_packet_type {
-            Bits(packets::CONNECT) => Ok(packets::Packet::Connect),
-            _ => Ok(packets::Packet::Unknown),
+    let fixed_header_result = parse_fixed_header(input);
+    if fixed_header_result.is_err() {
+        return Err(errors::Error::Common("Failed to parse fixed header".to_string()));
+    }
+
+    let (input, fixed_header) = fixed_header_result.unwrap();
+    match fixed_header.control_packet_type {
+        Bits(packets::CONNECT) => {
+            let (_, connect) = connect::connect_parser(fixed_header)(input).finish()?;
+            Ok(packets::Packet::Connect(connect))
         },
-        Err(err) => Err(Error::from(err)),
+        _ => Err(errors::Error::Common("Not implemented yet".to_string())),
     }
 }
 
-fn parse_fixed_header(input: &[u8]) -> IResult<&[u8], FixedHeader> {
+fn parse_fixed_header(input: &[u8]) -> IResult<&[u8], packets::FixedHeader> {
     let (input, (control_packet_type, flags)) = parse_fixed_header_first_byte(input)?;
     let (input, remaining_length) = parse_variable_byte_integer(input)?;
 
-    let fixed_header = FixedHeader::new(control_packet_type, flags, remaining_length)?;
+    let fixed_header = packets::FixedHeader::new(control_packet_type, flags, remaining_length)?;
     Ok((input, fixed_header))
 }
 
@@ -71,7 +77,7 @@ fn parse_variable_byte_integer(input: &[u8]) -> IResult<&[u8], VariableByteInteg
 
         multiplier *= 0x80;
         if multiplier > 0x80 * 0x80 * 0x80 {
-            return Err(Err::Error(nom::error::Error::new(
+            return Err(nom::Err::Error(nom::error::Error::new(
                 remaining_bytes,
                 nom::error::ErrorKind::Fail,
             )));
@@ -165,14 +171,14 @@ where
 // parse_properties is a helper function to parse the properties from the input.
 // If there are duplicate properties, the last one will be used. But strictly speaking,
 // it should be an error as a Protocol Error of the reason code 0x97 of the MQTT 5.0 specs.
-fn parse_properties(input: &[u8]) -> IResult<&[u8], Properties> {
+fn parse_properties(input: &[u8]) -> IResult<&[u8], packets::Properties> {
     let (input, properties_length) = parse_variable_byte_integer(input)?;
 
     let (remaining_bytes, properties_slice) =
         bytes::complete::take(properties_length.val() as usize)(input)?;
 
     let mut properties_bytes = properties_slice;
-    let mut properties = Properties::new();
+    let mut properties = packets::Properties::new();
     while !properties_bytes.is_empty() {
         let (input, (identifier, value)) = parse_property(properties_bytes)?;
         properties.insert(identifier, value);
@@ -182,34 +188,6 @@ fn parse_properties(input: &[u8]) -> IResult<&[u8], Properties> {
     Ok((remaining_bytes, properties))
 }
 
-const PAYLOAD_FORMAT_INDICATOR: VariableByteInteger = VariableByteInteger(0x01);
-const MESSAGE_EXPIRY_INTERVAL: VariableByteInteger = VariableByteInteger(0x02);
-const CONTENT_TYPE: VariableByteInteger = VariableByteInteger(0x03);
-const RESPONSE_TOPIC: VariableByteInteger = VariableByteInteger(0x08);
-const CORRELATION_DATA: VariableByteInteger = VariableByteInteger(0x09);
-const SUBSCRIPTION_IDENTIFIER: VariableByteInteger = VariableByteInteger(0x0B);
-const SESSION_EXPIRY_INTERVAL: VariableByteInteger = VariableByteInteger(0x11);
-const ASSIGNED_CLIENT_IDENTIFIER: VariableByteInteger = VariableByteInteger(0x12);
-const SERVER_KEEP_ALIVE: VariableByteInteger = VariableByteInteger(0x13);
-const AUTHENTICATION_METHOD: VariableByteInteger = VariableByteInteger(0x15);
-const AUTHENTICATION_DATA: VariableByteInteger = VariableByteInteger(0x16);
-const REQUEST_PROBLEM_INFORMATION: VariableByteInteger = VariableByteInteger(0x17);
-const WILL_DELAY_INTERVAL: VariableByteInteger = VariableByteInteger(0x18);
-const REQUEST_RESPONSE_INFORMATION: VariableByteInteger = VariableByteInteger(0x19);
-const RESPONSE_INFORMATION: VariableByteInteger = VariableByteInteger(0x1A);
-const SERVER_REFERENCE: VariableByteInteger = VariableByteInteger(0x1C);
-const REASON_STRING: VariableByteInteger = VariableByteInteger(0x1F);
-const RECEIVE_MAXIMUM: VariableByteInteger = VariableByteInteger(0x21);
-const TOPIC_ALIAS_MAXIMUM: VariableByteInteger = VariableByteInteger(0x22);
-const TOPIC_ALIAS: VariableByteInteger = VariableByteInteger(0x23);
-const MAXIMUM_QOS: VariableByteInteger = VariableByteInteger(0x24);
-const RETAIN_AVAILABLE: VariableByteInteger = VariableByteInteger(0x25);
-const USER_PROPERTY: VariableByteInteger = VariableByteInteger(0x26);
-const MAXIMUM_PACKET_SIZE: VariableByteInteger = VariableByteInteger(0x27);
-const WILDCARD_SUBSCRIPTION_AVAILABLE: VariableByteInteger = VariableByteInteger(0x28);
-const SUBSCRIPTION_IDENTIFIER_AVAILABLE: VariableByteInteger = VariableByteInteger(0x29);
-const SHARED_SUBSCRIPTION_AVAILABLE: VariableByteInteger = VariableByteInteger(0x2A);
-
 // parse_property is a helper function to parse a single property from the input.
 // This implementation follows the 2.2.2 Property section in the MQTT 5.0 specs.
 fn parse_property(input: &[u8]) -> IResult<&[u8], (VariableByteInteger, ValueTypes)> {
@@ -218,33 +196,33 @@ fn parse_property(input: &[u8]) -> IResult<&[u8], (VariableByteInteger, ValueTyp
 
     // Select the appropriate parser using value_typed_parser
     let parse = match identifier {
-        PAYLOAD_FORMAT_INDICATOR => value_typed_parser(parse_bits),
-        MESSAGE_EXPIRY_INTERVAL => value_typed_parser(parse_four_byte_integer),
-        CONTENT_TYPE => value_typed_parser(parse_utf8_encoded_string),
-        RESPONSE_TOPIC => value_typed_parser(parse_utf8_encoded_string),
-        CORRELATION_DATA => value_typed_parser(parse_binary_data),
-        SUBSCRIPTION_IDENTIFIER => value_typed_parser(parse_variable_byte_integer),
-        SESSION_EXPIRY_INTERVAL => value_typed_parser(parse_four_byte_integer),
-        ASSIGNED_CLIENT_IDENTIFIER => value_typed_parser(parse_utf8_encoded_string),
-        SERVER_KEEP_ALIVE => value_typed_parser(parse_two_byte_integer),
-        AUTHENTICATION_METHOD => value_typed_parser(parse_utf8_encoded_string),
-        AUTHENTICATION_DATA => value_typed_parser(parse_binary_data),
-        REQUEST_PROBLEM_INFORMATION => value_typed_parser(parse_bits),
-        WILL_DELAY_INTERVAL => value_typed_parser(parse_four_byte_integer),
-        REQUEST_RESPONSE_INFORMATION => value_typed_parser(parse_bits),
-        RESPONSE_INFORMATION => value_typed_parser(parse_utf8_encoded_string),
-        SERVER_REFERENCE => value_typed_parser(parse_utf8_encoded_string),
-        REASON_STRING => value_typed_parser(parse_utf8_encoded_string),
-        RECEIVE_MAXIMUM => value_typed_parser(parse_two_byte_integer),
-        TOPIC_ALIAS_MAXIMUM => value_typed_parser(parse_two_byte_integer),
-        TOPIC_ALIAS => value_typed_parser(parse_two_byte_integer),
-        MAXIMUM_QOS => value_typed_parser(parse_bits),
-        RETAIN_AVAILABLE => value_typed_parser(parse_bits),
-        USER_PROPERTY => value_typed_parser(parse_utf8_string_pair),
-        MAXIMUM_PACKET_SIZE => value_typed_parser(parse_four_byte_integer),
-        WILDCARD_SUBSCRIPTION_AVAILABLE => value_typed_parser(parse_bits),
-        SUBSCRIPTION_IDENTIFIER_AVAILABLE => value_typed_parser(parse_bits),
-        SHARED_SUBSCRIPTION_AVAILABLE => value_typed_parser(parse_bits),
+        packets::PAYLOAD_FORMAT_INDICATOR => value_typed_parser(parse_bits),
+        packets::MESSAGE_EXPIRY_INTERVAL => value_typed_parser(parse_four_byte_integer),
+        packets::CONTENT_TYPE => value_typed_parser(parse_utf8_encoded_string),
+        packets::RESPONSE_TOPIC => value_typed_parser(parse_utf8_encoded_string),
+        packets::CORRELATION_DATA => value_typed_parser(parse_binary_data),
+        packets::SUBSCRIPTION_IDENTIFIER => value_typed_parser(parse_variable_byte_integer),
+        packets::SESSION_EXPIRY_INTERVAL => value_typed_parser(parse_four_byte_integer),
+        packets::ASSIGNED_CLIENT_IDENTIFIER => value_typed_parser(parse_utf8_encoded_string),
+        packets::SERVER_KEEP_ALIVE => value_typed_parser(parse_two_byte_integer),
+        packets::AUTHENTICATION_METHOD => value_typed_parser(parse_utf8_encoded_string),
+        packets::AUTHENTICATION_DATA => value_typed_parser(parse_binary_data),
+        packets::REQUEST_PROBLEM_INFORMATION => value_typed_parser(parse_bits),
+        packets::WILL_DELAY_INTERVAL => value_typed_parser(parse_four_byte_integer),
+        packets::REQUEST_RESPONSE_INFORMATION => value_typed_parser(parse_bits),
+        packets::RESPONSE_INFORMATION => value_typed_parser(parse_utf8_encoded_string),
+        packets::SERVER_REFERENCE => value_typed_parser(parse_utf8_encoded_string),
+        packets::REASON_STRING => value_typed_parser(parse_utf8_encoded_string),
+        packets::RECEIVE_MAXIMUM => value_typed_parser(parse_two_byte_integer),
+        packets::TOPIC_ALIAS_MAXIMUM => value_typed_parser(parse_two_byte_integer),
+        packets::TOPIC_ALIAS => value_typed_parser(parse_two_byte_integer),
+        packets::MAXIMUM_QOS => value_typed_parser(parse_bits),
+        packets::RETAIN_AVAILABLE => value_typed_parser(parse_bits),
+        packets::USER_PROPERTY => value_typed_parser(parse_utf8_string_pair),
+        packets::MAXIMUM_PACKET_SIZE => value_typed_parser(parse_four_byte_integer),
+        packets::WILDCARD_SUBSCRIPTION_AVAILABLE => value_typed_parser(parse_bits),
+        packets::SUBSCRIPTION_IDENTIFIER_AVAILABLE => value_typed_parser(parse_bits),
+        packets::SHARED_SUBSCRIPTION_AVAILABLE => value_typed_parser(parse_bits),
         _ => {
             return Err(nom::Err::Error(nom::error::Error::new(
                 input,

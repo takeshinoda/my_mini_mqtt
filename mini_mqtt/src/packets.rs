@@ -1,40 +1,41 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::errors::Error;
+use crate::errors;
 
 pub mod connect;
+pub mod connack;
 
 #[path = "packets_tests.rs"]
 #[cfg(test)]
 mod packets_tests;
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Packet {
     Unknown,
-    Reserved,
-    //Connect(connect::Connect),
-    Connect,
-    ConnAck,
-    Publish,
-    PubAck,
-    PubRec,
-    PubRel,
-    PubComp,
-    Subscribe,
-    SubAck,
-    Unsubscribe,
-    UnSuback,
-    PingReq,
-    PingResp,
-    Disconnect,
-    Auth,
+    //Reserved,
+    Connect(connect::Connect),
+    ConnAck(connack::ConnAck),
+    //Publish,
+    //PubAck,
+    //PubRec,
+    //PubRel,
+    //PubComp,
+    //Subscribe,
+    //SubAck,
+    //Unsubscribe,
+    //UnSuback,
+    //PingReq,
+    //PingResp,
+    //Disconnect,
+    //Auth,
 }
 
 // Control Packet Type of the Fixed Header.
 //pub const RESERVED: u8 = 0;
 pub const CONNECT: u8 = 1;
-/*
 pub const CONNACK: u8 = 2;
+/*
 pub const PUBLISH: u8 = 3;
 pub const PUBACK: u8 = 4;
 pub const PUBREC: u8 = 5;
@@ -112,7 +113,7 @@ impl<'a> ExtractValue<'a, (&'a str, &'a str)> for UTF8StringPair {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ValueTypes {
     Bits(Bits),
     TwoByteInteger(TwoByteInteger),
@@ -298,7 +299,7 @@ impl fmt::Display for ValueTypes {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct FixedHeader {
     pub control_packet_type: Bits,
     pub flags: Bits,
@@ -310,7 +311,7 @@ impl FixedHeader {
         control_packet_type: Bits,
         flags: Bits,
         remaining_length: VariableByteInteger,
-    ) -> Result<FixedHeader, Error> {
+    ) -> Result<FixedHeader, errors::Error> {
         Ok(FixedHeader {
             control_packet_type,
             flags,
@@ -344,6 +345,7 @@ pub trait PacketIdentifier {
     fn packet_identity(&self) -> &PacketIdentity;
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Properties(pub HashMap<VariableByteInteger, ValueTypes>); // 2.2.2 Property Length subsection
 
 impl Properties {
@@ -355,7 +357,11 @@ impl Properties {
         self.0.insert(key, value);
     }
 
-    pub fn get_as<'a, T>(&'a self, key: VariableByteInteger) -> Result<Option<&'a T>, Error>
+    pub fn iter(&self) -> std::collections::hash_map::Iter<VariableByteInteger, ValueTypes> {
+        self.0.iter()
+    }
+
+    pub fn get_as<'a, T>(&'a self, key: VariableByteInteger) -> Result<Option<&'a T>, errors::Error>
     where
         T: FromValueTypesRef<'a>,
     {
@@ -365,7 +371,7 @@ impl Properties {
                 if let Some(typed) = T::from_value_types_ref(value) {
                     Ok(Some(typed))
                 } else {
-                    Err(Error::Common(format!(
+                    Err(errors::Error::Common(format!(
                         "The provided identifier is not a {:?} type. The stored value's type: {:?}",
                         T::type_name(),
                         value
@@ -384,6 +390,34 @@ impl Properties {
         self.0.len()
     }
 }
+
+pub const PAYLOAD_FORMAT_INDICATOR: VariableByteInteger = VariableByteInteger(0x01);
+pub const MESSAGE_EXPIRY_INTERVAL: VariableByteInteger = VariableByteInteger(0x02);
+pub const CONTENT_TYPE: VariableByteInteger = VariableByteInteger(0x03);
+pub const RESPONSE_TOPIC: VariableByteInteger = VariableByteInteger(0x08);
+pub const CORRELATION_DATA: VariableByteInteger = VariableByteInteger(0x09);
+pub const SUBSCRIPTION_IDENTIFIER: VariableByteInteger = VariableByteInteger(0x0B);
+pub const SESSION_EXPIRY_INTERVAL: VariableByteInteger = VariableByteInteger(0x11);
+pub const ASSIGNED_CLIENT_IDENTIFIER: VariableByteInteger = VariableByteInteger(0x12);
+pub const SERVER_KEEP_ALIVE: VariableByteInteger = VariableByteInteger(0x13);
+pub const AUTHENTICATION_METHOD: VariableByteInteger = VariableByteInteger(0x15);
+pub const AUTHENTICATION_DATA: VariableByteInteger = VariableByteInteger(0x16);
+pub const REQUEST_PROBLEM_INFORMATION: VariableByteInteger = VariableByteInteger(0x17);
+pub const WILL_DELAY_INTERVAL: VariableByteInteger = VariableByteInteger(0x18);
+pub const REQUEST_RESPONSE_INFORMATION: VariableByteInteger = VariableByteInteger(0x19);
+pub const RESPONSE_INFORMATION: VariableByteInteger = VariableByteInteger(0x1A);
+pub const SERVER_REFERENCE: VariableByteInteger = VariableByteInteger(0x1C);
+pub const REASON_STRING: VariableByteInteger = VariableByteInteger(0x1F);
+pub const RECEIVE_MAXIMUM: VariableByteInteger = VariableByteInteger(0x21);
+pub const TOPIC_ALIAS_MAXIMUM: VariableByteInteger = VariableByteInteger(0x22);
+pub const TOPIC_ALIAS: VariableByteInteger = VariableByteInteger(0x23);
+pub const MAXIMUM_QOS: VariableByteInteger = VariableByteInteger(0x24);
+pub const RETAIN_AVAILABLE: VariableByteInteger = VariableByteInteger(0x25);
+pub const USER_PROPERTY: VariableByteInteger = VariableByteInteger(0x26);
+pub const MAXIMUM_PACKET_SIZE: VariableByteInteger = VariableByteInteger(0x27);
+pub const WILDCARD_SUBSCRIPTION_AVAILABLE: VariableByteInteger = VariableByteInteger(0x28);
+pub const SUBSCRIPTION_IDENTIFIER_AVAILABLE: VariableByteInteger = VariableByteInteger(0x29);
+pub const SHARED_SUBSCRIPTION_AVAILABLE: VariableByteInteger = VariableByteInteger(0x2A);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum QoS {
@@ -404,12 +438,16 @@ impl fmt::Display for QoS {
     }
 }
 
-pub fn qos_from_bits(qos: Bits) -> Result<QoS, Error> {
+pub fn qos_from_bits(qos: Bits) -> Result<QoS, errors::Error> {
     let val = qos.val();
     match val {
         0 => Ok(QoS::AtMostOnce),
         1 => Ok(QoS::AtLeastOnce),
         2 => Ok(QoS::ExactlyOnce),
-        _ => Err(Error::MalformedPacket(format!("Invalid QoS value {}", val))),
+        _ => Err(errors::Error::MalformedPacket(format!("Invalid QoS value {}", val))),
     }
+}
+
+pub trait ReasonCode {
+    fn code(&self) -> u8;
 }

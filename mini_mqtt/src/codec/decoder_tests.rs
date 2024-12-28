@@ -1,22 +1,47 @@
-use std::io::Cursor;
-
+use std::io;
+use crate::packets::PAYLOAD_FORMAT_INDICATOR;
 use super::super::decoder::*; // the test target
-use crate::packets;
 
 #[test]
 fn decode_fixed_header_as_connect() {
-    let data = vec![0x11, 0x00, 0x80, 0x01];
-    let mut cursor = Cursor::new(data);
+    let data = vec![0x11, 0x80, 0x01];
+    let zero_filled_128_data = vec![0x00; 128];
+    let data = [data, zero_filled_128_data].concat();
+    let mut cursor = io::Cursor::new(data);
     let result = decode(&mut cursor);
 
     let packet = result.unwrap();
-    assert!(matches!(&packet, packets::Packet::Connect));
+
+    let expected = packets::connect::Connect{
+        fixed_header: packets::FixedHeader {
+            control_packet_type: Bits(1),
+            flags: Bits(1),
+            remaining_length: VariableByteInteger(128),
+        },
+        variable_header: packets::connect::VariableHeader {
+            protocol_name: UTF8EncodedString("".to_string()),
+            protocol_version: Bits(0),
+            connect_flags: packets::connect::ConnectFlags(Bits(0)),
+            keep_alive: TwoByteInteger(0),
+            properties: packets::Properties::new(),
+        },
+        payload: packets::connect::Payload {
+            client_id: UTF8EncodedString("".to_string()),
+            will_properties: None,
+            will_topic: None,
+            user_name: None,
+            password: None,
+            will_payload: None,
+        },
+    };
+
+    assert_eq!(packets::Packet::Connect(expected), packet);
 }
 
 #[test]
 fn decode_invalid_packet_data() {
     let data = vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
-    let mut cursor = Cursor::new(data);
+    let mut cursor = io::Cursor::new(data);
     let result = decode(&mut cursor);
 
     assert!(result.is_err());
@@ -83,7 +108,7 @@ fn parse_four_byte_integer_invalid_length() {
 }
 
 #[test]
-fn parse_variable_byte_integer_valid() {
+fn parse_variable_byte_integer_valid_127() {
     let data = vec![0x7F];
     let result = parse_variable_byte_integer(&data);
 
@@ -92,25 +117,43 @@ fn parse_variable_byte_integer_valid() {
 }
 
 #[test]
-fn parse_variable_byte_integer_valid2() {
+fn parse_variable_byte_integer_valid_128() {
+    let data = vec![0x80, 0x01];
+    let result = parse_variable_byte_integer(&data);
+
+    let (_, remaining_length) = result.unwrap();
+    assert_eq!(remaining_length, VariableByteInteger(128));
+}
+
+#[test]
+fn parse_variable_byte_integer_valid_129() {
+    let data = vec![0x81, 0x01];
+    let result = parse_variable_byte_integer(&data);
+
+    let (_, remaining_length) = result.unwrap();
+    assert_eq!(remaining_length, VariableByteInteger(0x81));
+}
+
+#[test]
+fn parse_variable_byte_integer_valid_16_384() {
     let data = vec![0x80, 0x80, 0x01];
     let result = parse_variable_byte_integer(&data);
 
     let (_, remaining_length) = result.unwrap();
-    assert_eq!(remaining_length, VariableByteInteger(16384));
+    assert_eq!(remaining_length, VariableByteInteger(16_384));
 }
 
 #[test]
-fn parse_variable_byte_integer_valid3() {
+fn parse_variable_byte_integer_valid_2_097_152() {
     let data = vec![0x80, 0x80, 0x80, 0x01];
     let result = parse_variable_byte_integer(&data);
 
     let (_, remaining_length) = result.unwrap();
-    assert_eq!(remaining_length, VariableByteInteger(2097152));
+    assert_eq!(remaining_length, VariableByteInteger(2_097_152));
 }
 
 #[test]
-fn parse_variable_byte_integer_valid4() {
+fn parse_variable_byte_integer_valid_268_435_455() {
     let data = vec![0xFF, 0xFF, 0xFF, 0x7F];
     let result = parse_variable_byte_integer(&data);
 
@@ -119,7 +162,7 @@ fn parse_variable_byte_integer_valid4() {
 }
 
 #[test]
-fn parse_variable_byte_integer_invalid() {
+fn parse_variable_byte_integer_invalid_over_268_435_455() {
     let data = vec![0xFF, 0xFF, 0xFF, 0x80];
     let result = parse_variable_byte_integer(&data);
 

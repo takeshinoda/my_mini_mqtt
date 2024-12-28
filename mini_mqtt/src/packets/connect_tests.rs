@@ -85,9 +85,9 @@ fn connect_flags_no_clean_start() {
     assert!(!flags.clean_start());
 }
 
-fn valid_fixed_header() -> FixedHeader {
+fn valid_fixed_header() -> packets::FixedHeader {
     // NOTE: remaining length is 0. It is can be set to 0 for testing purposes.
-    FixedHeader::new(Bits(0x01), Bits(0x00), VariableByteInteger(0)).unwrap()
+    packets::FixedHeader::new(Bits(0x01), Bits(0x00), VariableByteInteger(0)).unwrap()
 }
 
 fn valid_variable_header() -> VariableHeader {
@@ -96,7 +96,7 @@ fn valid_variable_header() -> VariableHeader {
         Bits(5),
         ConnectFlags::new(Bits(0b0000_0000)).unwrap(),
         TwoByteInteger(60),
-        Properties::new(),
+        packets::Properties::new(),
     )
     .unwrap()
 }
@@ -127,7 +127,7 @@ fn validate_invalid_protocol_name() {
         Bits(5),
         ConnectFlags::new(Bits(0b0000_0000)).unwrap(),
         TwoByteInteger(60),
-        Properties::new(),
+        packets::Properties::new(),
     )
     .unwrap();
     let payload = Payload::new(
@@ -152,7 +152,7 @@ fn validate_invalid_protocol_version() {
         Bits(4), // unsupported version
         ConnectFlags::new(Bits(0b0000_0000)).unwrap(),
         TwoByteInteger(60),
-        Properties::new(),
+        packets::Properties::new(),
     )
     .unwrap();
     let payload = Payload::new(
@@ -177,7 +177,7 @@ fn validate_missing_username() {
         Bits(5),
         ConnectFlags::new(Bits(0b1000_0000)).unwrap(), // username flag set
         TwoByteInteger(60),
-        Properties::new(),
+        packets::Properties::new(),
     )
     .unwrap();
     let payload = Payload::new(
@@ -220,7 +220,7 @@ fn validate_missing_password() {
         Bits(5),
         ConnectFlags::new(Bits(0b0100_0000)).unwrap(), // password flag set
         TwoByteInteger(60),
-        Properties::new(),
+        packets::Properties::new(),
     )
     .unwrap();
     let payload = Payload::new(
