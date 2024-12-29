@@ -241,7 +241,7 @@ pub fn validate(connect: &Connect) -> Result<(), Vec<errors::Error>> {
 //   Server MUST treat this as a special case and assign a unique ClientID to that Client [MQTT-3.1.3-6]
 // But, for now, we don't support the zero-length Client ID.
 // Look the 3.1.3.1 Client Identifier (ClientID) subsection for more details.
-fn validate_client_id(client_id: &str) -> Result<(), errors::Error> {
+pub fn validate_client_id(client_id: &str) -> Result<(), errors::Error> {
     let len = client_id.len();
     if len < 1 || len > 23 {
         return Err(errors::Error::MalformedPacket(
